@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scrub</title>
+<meta name="description" content="See the hidden location, device and date data inside your photos, and make clean copies before you share them. Runs entirely in your browser.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Inter+Tight:wght@400;500;600&family=Fragment+Mono&display=swap">
+<style>
+/* Layout: drop zone on top, then one card per photo: thumbnail left, what the file reveals right, clean-copy actions below */
+:root{
+  --bg:#f2f2ee; --panel:#ffffff; --ink:#1b1c18; --muted:#62645b; --line:#dcddd4;
+  --accent:#1b1c18; --risk:#c2410c; --risk-soft:#fdeee4; --info:#4a5d23; --info-soft:#eef2e2; --safe:#2f6f4e; --safe-soft:#e3f1e9;
+  --display:"Unbounded", "Arial Black", system-ui, sans-serif; --sans:"Inter Tight", "Segoe UI", system-ui, sans-serif; --mono:"Fragment Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#121310; --panel:#1b1c18; --ink:#ecece4; --muted:#a3a598; --line:#2e3029;
+  --accent:#ecece4; --risk:#fb8a4f; --risk-soft:#3a1d0e; --info:#b5c97f; --info-soft:#262d14; --safe:#6fcf97; --safe-soft:#12301f; color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.5 var(--sans);
+  padding:32px max(16px,env(safe-area-inset-right,0px)) 56px max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:960px;margin:0 auto}
+.crumb{font:13px var(--mono);color:var(--muted)} .crumb a{color:inherit}
+h1{font:700 clamp(44px,8vw,76px)/1 var(--display);margin:6px 0 0;letter-spacing:-.04em}
+.lede{color:var(--muted);max-width:60ch;margin:12px 0 24px;font-size:16.5px}
+.drop{display:grid;place-items:center;text-align:center;gap:8px;border:2px dashed var(--line);border-radius:18px;padding:34px 18px;background:var(--panel);cursor:pointer;transition:border-color .15s}
+.drop.over,.drop:focus-within{border-color:var(--ink)}
+.drop strong{font:500 18px var(--display);letter-spacing:-.01em}
+.drop span{color:var(--muted);font-size:14px}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:18px 0 10px}
+button,.btn{font:600 14px var(--sans);border-radius:10px;padding:10px 16px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;gap:6px;align-items:center}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+button:focus-visible,.btn:focus-visible{outline:2px solid var(--risk);outline-offset:2px}
+.list{display:grid;gap:14px}
+.card{display:grid;grid-template-columns:200px minmax(0,1fr);gap:18px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+@media (max-width:600px){.card{grid-template-columns:1fr}}
+.card img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;background:var(--bg)}
+.card h3{margin:0 0 4px;font:600 16px var(--sans);word-break:break-all}
+.card .size{font:12.5px var(--mono);color:var(--muted)}
+.facts{list-style:none;padding:0;margin:12px 0;display:grid;gap:6px}
+.facts li{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:9px;font-size:14px}
+.facts li b{font:500 11.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;align-self:center}
+.facts li.risk{background:var(--risk-soft)} .facts li.risk b{color:var(--risk)}
+.facts li.info{background:var(--info-soft)} .facts li.info b{color:var(--info)}
+.facts li.safe{background:var(--safe-soft)} .facts li.safe b{color:var(--safe)}
+.facts code{font:13px var(--mono);word-break:break-all}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+.done{font-size:13.5px;color:var(--safe);font-weight:600}
+.how{margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.how div{border-top:2px solid var(--ink);padding-top:10px;font-size:14px;color:var(--muted)}
+.how h2{font:500 15px var(--display);color:var(--ink);margin:0 0 6px}
+.sample{font-size:13px;color:var(--muted);margin-top:8px}
+.sample button{padding:4px 10px;font-size:13px}
+footer{margin-top:28px;font-size:13px;color:var(--muted)} footer a{color:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumb"><a href="../">Low Profile</a> / Scrub</div>
+<h1>Scrub</h1>
+<p class="lede">Phone photos often carry the exact spot where they were taken, plus your phone model and the time. Drop photos here to see what they reveal, then save clean copies to share. Your photos never leave this device.</p>
+
+<label class="drop" id="drop">
+  <input type="file" id="file" accept="image/*" multiple>
+  <strong>Drop photos or tap to choose</strong>
+  <span>JPEG, PNG or WebP. Pick as many as you like.</span>
+</label>
+<p class="sample">No photo handy? <button type="button" id="sample">Load a sample photo with a location in it</button></p>
+
+<div class="bar" id="bar" hidden>
+  <button class="primary" id="all" type="button">Save all clean copies</button>
+  <button id="clear" type="button">Clear</button>
+  <span class="done" id="msg" role="status"></span>
+</div>
+<div class="list" id="list"></div>
+
+<section class="how">
+  <div><h2>What gets removed</h2>Everything that isn't the picture itself: GPS coordinates, camera make and model, lens, date and time, editing software and embedded thumbnails.</div>
+  <div><h2>How it works</h2>Your browser redraws each photo onto a blank canvas and saves that, which keeps the pixels and drops the hidden data. Nothing is uploaded.</div>
+  <div><h2>Worth knowing</h2>Many social apps strip location on upload, but email, messaging apps sending "original quality", cloud links and marketplaces often keep it.</div>
+</section>
+<footer>Part of <a href="../">Low Profile</a>. iPhone HEIC photos open only in Safari; elsewhere, share them as "Most Compatible" (JPEG) first.</footer>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+let items=[];
+const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const kb=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.round(n/1024)+" KB";
+
+// --- Minimal EXIF reader (JPEG APP1) ---
+function readExif(buf){
+  const v=new DataView(buf); if(v.byteLength<4||v.getUint16(0)!==0xFFD8) return null;
+  let o=2;
+  while(o+4<v.byteLength){
+    const m=v.getUint16(o); if((m&0xFF00)!==0xFF00) break;
+    const len=v.getUint16(o+2);
+    if(m===0xFFE1 && v.getUint32(o+4)===0x45786966){ return parseTiff(v,o+10); }
+    if(m===0xFFDA) break; o+=2+len;
+  }
+  return null;
+}
+function parseTiff(v,t){
+  const le=v.getUint16(t)===0x4949; const u16=p=>v.getUint16(p,le), u32=p=>v.getUint32(p,le);
+  const out={};
+  const val=(e)=>{ const type=u16(e+2), n=u32(e+4); const size={1:1,2:1,3:2,4:4,5:8,7:1}[type]||1; const p=size*n>4?t+u32(e+8):e+8;
+    if(type===2){ let s=""; for(let i=0;i<n-1;i++){const c=v.getUint8(p+i); if(c) s+=String.fromCharCode(c);} return s.trim(); }
+    if(type===3) return n===1?u16(p):Array.from({length:n},(_,i)=>u16(p+2*i));
+    if(type===4) return u32(p);
+    if(type===5) return Array.from({length:n},(_,i)=>{const d=u32(p+8*i+4);return d?u32(p+8*i)/d:0});
+    return null; };
+  const ifd=(off,map)=>{ if(!off||t+off+2>v.byteLength) return; const n=u16(t+off); for(let i=0;i<n;i++){ const e=t+off+2+12*i; if(e+12>v.byteLength) break; const tag=u16(e); if(map[tag]) out[map[tag]]=val(e); } };
+  ifd(u32(t+4),{0x10F:"make",0x110:"model",0x131:"software",0x132:"modified",0x8769:"exifPtr",0x8825:"gpsPtr"});
+  if(out.exifPtr) ifd(out.exifPtr,{0x9003:"taken",0xA434:"lens",0xA431:"serial"});
+  if(out.gpsPtr) ifd(out.gpsPtr,{1:"latRef",2:"lat",3:"lonRef",4:"lon",6:"alt"});
+  if(Array.isArray(out.lat)&&Array.isArray(out.lon)){
+    const dd=a=>a[0]+a[1]/60+a[2]/3600;
+    out.gps=[(out.latRef==="S"?-1:1)*dd(out.lat),(out.lonRef==="W"?-1:1)*dd(out.lon)];
+  }
+  return out;
+}
+
+function facts(x){
+  if(x.exif===null) return x.type==="image/jpeg"?[["safe","Hidden data","None found. A clean copy is still safest."]]:[["info","Hidden data","Not checked for this format. The clean copy removes it either way."]];
+  const f=[];
+  const e=x.exif||{};
+  if(e.gps) f.push(["risk","Location",`<code>${e.gps[0].toFixed(6)}, ${e.gps[1].toFixed(6)}</code><br>Precise to a few metres. Anyone with the file can find this spot.`]);
+  if(e.make||e.model) f.push(["info","Device",esc([e.make,e.model].filter(Boolean).join(" "))]);
+  if(e.lens) f.push(["info","Lens",esc(e.lens)]);
+  if(e.serial) f.push(["risk","Serial no.",esc(e.serial)]);
+  if(e.taken) f.push(["info","Taken",esc(e.taken.replace(/^(\d{4}):(\d\d):(\d\d)/,"$3/$2/$1"))]);
+  if(e.software) f.push(["info","Software",esc(e.software)]);
+  if(!f.length) f.push(["safe","Hidden data","Some metadata, but no location, device or date."]);
+  return f;
+}
+async function clean(x){
+  const img=await createImageBitmap(x.file).catch(()=>null);
+  if(!img) return null;
+  const c=document.createElement("canvas"); c.width=img.width; c.height=img.height; c.getContext("2d").drawImage(img,0,0);
+  const png=x.type==="image/png"; const blob=await new Promise(r=>c.toBlob(r,png?"image/png":"image/jpeg",.92));
+  return {blob,name:x.file.name.replace(/\.[^.]+$/,"")+"-clean."+(png?"png":"jpg")};
+}
+function save(out){ const a=document.createElement("a"); a.href=URL.createObjectURL(out.blob); a.download=out.name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500); }
+
+async function add(files){
+  for(const file of files){
+    if(!file.type.startsWith("image/")) continue;
+    const buf=await file.arrayBuffer();
+    items.push({file,type:file.type,url:URL.createObjectURL(file),exif:file.type==="image/jpeg"?readExif(buf):null});
+  }
+  render();
+}
+function render(){
+  $("#bar").hidden=!items.length;
+  $("#list").innerHTML=items.map((x,i)=>`<article class="card"><img src="${x.url}" alt="${esc(x.file.name)}"><div>
+    <h3>${esc(x.file.name)}</h3><div class="size">${kb(x.file.size)} · ${esc(x.type.replace("image/","").toUpperCase())}</div>
+    <ul class="facts">${facts(x).map(([k,l,t])=>`<li class="${k}"><b>${l}</b><span>${t}</span></li>`).join("")}</ul>
+    <div class="acts"><button class="primary" data-save="${i}" type="button">Save clean copy</button>${navigator.canShare?`<button data-share="${i}" type="button">Share clean copy</button>`:""}<span class="done" id="d${i}"></span></div>
+  </div></article>`).join("");
+}
+$("#file").onchange=e=>{ add(e.target.files); e.target.value=""; };
+const drop=$("#drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>add(e.dataTransfer.files));
+$("#list").onclick=async e=>{ const b=e.target.closest("button"); if(!b) return;
+  const i=+(b.dataset.save??b.dataset.share), out=await clean(items[i]);
+  if(!out){ $("#d"+i).textContent="This browser can't open that file."; return; }
+  if(b.dataset.save!==undefined){ save(out); $("#d"+i).textContent="Saved "+out.name; }
+  else { const f=new File([out.blob],out.name,{type:out.blob.type}); try{ if(navigator.canShare({files:[f]})) await navigator.share({files:[f]}); else save(out);}catch{} } };
+$("#all").onclick=async()=>{ let n=0; for(const x of items){ const out=await clean(x); if(out){ save(out); n++; await new Promise(r=>setTimeout(r,350)); } } $("#msg").textContent=`Saved ${n} clean cop${n===1?"y":"ies"}.`; };
+$("#clear").onclick=()=>{ items.forEach(x=>URL.revokeObjectURL(x.url)); items=[]; $("#msg").textContent=""; render(); };
+
+// --- Sample photo: draw a scene and embed real EXIF with a GPS tag ---
+function tiff(ifds){ // ifds: [[{tag,type,val}]], val for ptr = {ifd:index}
+  const sz={2:1,3:2,4:4,5:8}; const bytes=e=>e.type===2?e.val.length+1:e.type===5?8*e.val.length:sz[e.type]*(Array.isArray(e.val)?e.val.length:1);
+  const offs=[8]; ifds.forEach((d,i)=>{ const data=d.reduce((s,e)=>{const b=bytes(e);return s+(b>4?b+(b%2):0)},0); offs[i+1]=offs[i]+2+12*d.length+4+data; });
+  const buf=new ArrayBuffer(offs[ifds.length]), v=new DataView(buf);
+  v.setUint16(0,0x4949); v.setUint16(2,42,true); v.setUint32(4,8,true);
+  ifds.forEach((d,i)=>{ let p=offs[i]; v.setUint16(p,d.length,true); let data=p+2+12*d.length+4;
+    d.forEach((e,k)=>{ const ep=p+2+12*k, b=bytes(e); v.setUint16(ep,e.tag,true); v.setUint16(ep+2,e.type,true);
+      v.setUint32(ep+4,e.type===2?b:e.type===5?e.val.length:1,true);
+      let w=b>4?data:ep+8; if(b>4){ v.setUint32(ep+8,data,true); data+=b+(b%2); }
+      if(e.type===2){ for(let j=0;j<e.val.length;j++) v.setUint8(w+j,e.val.charCodeAt(j)); v.setUint8(w+e.val.length,0); }
+      else if(e.type===4) v.setUint32(w,e.val.ifd!==undefined?offs[e.val.ifd]:e.val,true);
+      else if(e.type===5) e.val.forEach((r,j)=>{ v.setUint32(w+8*j,r[0],true); v.setUint32(w+8*j+4,r[1],true); });
+    }); v.setUint32(p+2+12*d.length,0,true); });
+  return new Uint8Array(buf);
+}
+$("#sample").onclick=async()=>{
+  const c=document.createElement("canvas"); c.width=1200; c.height=900; const g=c.getContext("2d");
+  const sky=g.createLinearGradient(0,0,0,900); sky.addColorStop(0,"#7fb6e6"); sky.addColorStop(.55,"#f3d9b1"); sky.addColorStop(.56,"#2f7fa8"); sky.addColorStop(1,"#1d5876"); g.fillStyle=sky; g.fillRect(0,0,1200,900);
+  g.fillStyle="#f6e7c3"; g.beginPath(); g.arc(860,330,70,0,7); g.fill();
+  g.fillStyle="#5a6b3a"; g.beginPath(); g.moveTo(0,520); g.lineTo(260,380); g.lineTo(520,505); g.lineTo(0,505); g.fill();
+  g.fillStyle="#efe6d4"; for(let i=0;i<6;i++){ g.fillRect(90+i*70,450-i*8,52,58+i*8); } g.fillStyle="#b4562a"; for(let i=0;i<6;i++){ g.fillRect(84+i*70,440-i*8,64,14); }
+  const jpg=new Uint8Array(await (await new Promise(r=>c.toBlob(r,"image/jpeg",.85))).arrayBuffer());
+  const dms=d=>[[Math.floor(d),1],[Math.floor(d%1*60),1],[Math.round((d*60%1)*60*100),100]];
+  const t=tiff([
+    [{tag:0x10F,type:2,val:"Apple"},{tag:0x110,type:2,val:"iPhone 15 Pro"},{tag:0x131,type:2,val:"17.4"},{tag:0x8769,type:4,val:{ifd:1}},{tag:0x8825,type:4,val:{ifd:2}}],
+    [{tag:0x9003,type:2,val:"2026:08:14 19:42:07"}],
+    [{tag:1,type:2,val:"N"},{tag:2,type:5,val:dms(41.890210)},{tag:3,type:2,val:"E"},{tag:4,type:5,val:dms(12.492231)}]]);
+  const len=2+6+t.length, app1=new Uint8Array(4+6+t.length);
+  app1.set([0xFF,0xE1,len>>8,len&255,0x45,0x78,0x69,0x66,0,0]); app1.set(t,10);
+  const outb=new Uint8Array(jpg.length+app1.length); outb.set(jpg.subarray(0,2)); outb.set(app1,2); outb.set(jpg.subarray(2),2+app1.length);
+  add([new File([outb],"IMG_4821.jpg",{type:"image/jpeg",lastModified:Date.now()})]);
+};
+</script>
+</body>
+</html>
